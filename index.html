@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -356,8 +357,9 @@ if(!CanvasRenderingContext2D.prototype.roundRect){
 // ═══════════════════════════════════════════════════════════
 let bgImg=null, headImg=null;
 
-// ניסיון טעינה אוטומטי מהמאגר בגיט באותו התיקייה שבה הקובץ נמצא
-const autoHeadImageName = "WhatsApp Image 2026-06-16 at 00.59.07.jpeg";
+const autoHeadImageName = "Face1.jpeg";
+const autoBackgroundImageName = "Test2.jpeg";
+
 const githubHeadImg = new Image();
 githubHeadImg.src = encodeURIComponent(autoHeadImageName); 
 githubHeadImg.onload = function() {
@@ -370,6 +372,21 @@ githubHeadImg.onload = function() {
 };
 githubHeadImg.onerror = function() {
   console.log("No automatic head image found in root repo path, waiting for manual upload.");
+};
+
+// תיקון יצירת האלמנט לתמונת הרקע
+const githubBgImg = new Image();
+githubBgImg.src = encodeURIComponent(autoBackgroundImageName); 
+githubBgImg.onload = function() {
+  bgImg = githubBgImg; // תיקון שם המשתנה הגלובלי מ-backImg ל-bgImg
+  const lbl = document.getElementById('lblBG'); // תיקון ה-ID מ-'lblbackground' ל-'lblBG'
+  if(lbl) {
+    lbl.classList.add('loaded');
+    lbl.textContent = '✓ BG (Git)';
+  }
+};
+githubBgImg.onerror = function() {
+  console.log("No automatic background image found in root repo path, waiting for manual upload.");
 };
 
 function loadImgFile(file,cb){
@@ -422,6 +439,9 @@ let eStagger=0, eStun=0;
 let eDead=false, eDeadTimer=0;
 let ePanic=false, ePanicVX=0, ePanicT=0;
 let ragdoll=null;
+// משתנים לתנועה הרנדומלית של האויב
+let eCurrentSpd = 1.8;
+let eChangeDirT = 0; 
 
 // WEAPONS
 let grenades=[];
@@ -487,7 +507,7 @@ function updateUI(){
 
 function registerHit(){
   combo = Math.min(combo+1, 16);
-  comboTimer = COMBO_DECAY;   
+  comboTimer = COMBO_DECAY; 
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -616,6 +636,7 @@ function respawnEnemy(){
   eX=90+Math.random()*(W-180);
   eBaseSpd=Math.min(6.8,1.8+wave*0.33);
   eStagger=0;eStun=0;ePanic=false;
+  eChangeDirT=0; // איפוס טיימר החלטה
   updateUI();
 }
 
@@ -915,15 +936,27 @@ function drawRagdoll(){
       }else{
         cx.fillStyle='#bf9050';cx.beginPath();cx.ellipse(0,0,22,24,0,0,Math.PI*2);cx.fill();
       }
-      cx.fillStyle='#2c5018';cx.beginPath();cx.roundRect(-28,-20,56,8,3);cx.fill();
-    } else if(p.type==='body'){
-      cx.fillStyle='#284e18';cx.beginPath();cx.roundRect(-20,-24,40,48,8);cx.fill();
-    } else if(p.type==='arm'){
-      cx.strokeStyle='#3c6e28';cx.lineWidth=9;cx.lineCap='round';
+      
+      const hmg=cx.createLinearGradient(-26,-30,26,-6);
+      hmg.addColorStop(0,'#4a7a2e');hmg.addColorStop(1,'#2c5018');
+      cx.fillStyle=hmg;
+      cx.beginPath();cx.moveTo(-26,-14);cx.lineTo(-28,-20);
+      cx.quadraticCurveTo(-22,-40,0,-42);cx.quadraticCurveTo(22,-40,28,-20);
+      cx.lineTo(26,-14);cx.closePath();cx.fill();
+      cx.fillStyle='#385a1e';cx.beginPath();cx.roundRect(-28,-16,56,8,3);cx.fill();
+    }
+    else if(p.type==='body'){
+      const tg=cx.createLinearGradient(-20,-24,20,24);
+      tg.addColorStop(0,'#3c6e28');tg.addColorStop(1,'#284e18');
+      cx.fillStyle=tg;cx.beginPath();cx.roundRect(-20,-24,40,48,8);cx.fill();
+    }
+    else if(p.type==='arm'){
+      cx.strokeStyle='#3c6e28';cx.lineWidth=9;
       cx.beginPath();cx.moveTo(0,0);cx.lineTo(0,24);cx.stroke();
-    } else {
-      cx.strokeStyle='#284e18';cx.lineWidth=9;cx.lineCap='round';
-      cx.beginPath();cx.moveTo(0,0);cx.lineTo(0,28);cx.stroke();
+    }
+    else if(p.type==='leg'){
+      cx.strokeStyle='#3a6a30';cx.lineWidth=9;
+      cx.beginPath();cx.moveTo(0,0);cx.lineTo(0,26);cx.stroke();
     }
     cx.restore();
   });
@@ -931,167 +964,215 @@ function drawRagdoll(){
 }
 
 // ═══════════════════════════════════════════════════════════
-//  GAME CORE UPDATE & LOOP
+//  GAME LOOP & UPDATE LOGIC
 // ═══════════════════════════════════════════════════════════
-function update(){
+function updateEntities(){
   if(comboTimer>0){
-    comboTimer--;
-    if(comboTimer<=0) combo=1;
+    comboTimer -= sloMo;
+    if(comboTimer<=0){combo=1;lastComboVal=1;updateUI();}
   }
 
-  if(gCD>0) gCD--;
-  if(eCD>0) eCD--;
+  // DRONE MOVEMENT
+  if(goL) dVX -= D_ACCEL;
+  if(goR) dVX += D_ACCEL;
+  dVX *= D_FRIC;
+  if(dVX>D_MAX)dVX=D_MAX; if(dVX<-D_MAX)dVX=-D_MAX;
+  dX += dVX*sloMo;
+  if(dX<55){dX=55;dVX=0;} if(dX>W-55){dX=W-55;dVX=0;}
+  if(Math.abs(dVX)>0.25) pEngine();
 
-  if(goL) dVX = Math.max(-D_MAX, dVX - D_ACCEL);
-  else if(goR) dVX = Math.min(D_MAX, dVX + D_ACCEL);
-  else dVX *= D_FRIC;
-  dX = Math.max(40, Math.min(W-40, dX + dVX));
+  // ENEMY LOGIC (SOLDIER)
+  if(!eDead){
+    if(eStun>0) {
+      eStun -= sloMo;
+    } else {
+      if(ePanic){
+        eX += ePanicVX*sloMo;
+        eAnim += Math.abs(ePanicVX)*0.4*sloMo;
+        eDir = ePanicVX>0?1:-1;
+        ePanicT -= sloMo;
+        if(ePanicT<=0)ePanic=false;
+      } else {
+        // מנגנון בחירת כיוון ותנועה רנדומלית
+        eChangeDirT -= sloMo;
+        if(eChangeDirT <= 0) {
+          eChangeDirT = 60 + Math.random() * 120; // קבלת החלטה חדשה כל 1-2 שניות
+          const randOption = Math.random();
+          
+          if(randOption < 0.4) {
+            eDir = 1; // ללכת ימינה
+            eCurrentSpd = eBaseSpd * (0.6 + Math.random() * 0.6);
+          } else if(randOption < 0.8) {
+            eDir = -1; // ללכת שמאלה
+            eCurrentSpd = eBaseSpd * (0.6 + Math.random() * 0.6);
+          } else {
+            eCurrentSpd = 0; // לעמוד לרגע במקום
+          }
+        }
 
-  if(Math.abs(dVX)>1.5 && Math.random()<0.4) pEngine();
+        // תנועה בפועל לפי ההחלטה הרנדומלית
+        eX += (eDir * eCurrentSpd) * sloMo;
+        if(eCurrentSpd > 0) {
+          eAnim += eCurrentSpd * 0.25 * sloMo;
+        }
+      }
 
-  bgClouds.forEach(c=>{
-    c.x += c.spd;
-    if(c.x - c.w > W) c.x = -c.w;
-  });
-  bgBirds.forEach(b=>{
-    b.x += b.spd; b.ft++;
-    if(b.x > W + 20) { b.x = -20; b.y = 35+Math.random()*85; }
-  });
-
-  grenades.forEach((g,idx)=>{
-    if(!g.armed){
-      g.armT--; if(g.armT<=0) g.armed=true;
+      // שמירה על גבולות המסך
+      if(eX < 60) { eX = 60; eDir = 1; eChangeDirT = 0; }
+      if(eX > W-60) { eX = W-60; eDir = -1; eChangeDirT = 0; }
     }
-    g.vy += 0.35; 
-    g.x += g.vx; g.y += g.vy;
-    g.rot += g.vrot;
+    if(eStagger>0) eStagger -= sloMo;
+  } else {
+    // RAGDOLL PHYSICS
+    if(ragdoll){
+      ragdoll.parts.forEach(p=>{
+        p.ox += p.vx*sloMo; p.oy += p.vy*sloMo;
+        p.vy += p.grav*sloMo; p.rot += p.vrot*sloMo;
+        if(ragdoll.y+p.oy > GY+16){
+          ragdoll.y+p.oy==GY+16; p.vx*=0.6; p.vy=-p.vy*0.35; p.vrot*=0.5;
+        }
+      });
+    }
+    eDeadTimer -= sloMo;
+  }
 
-    if(g.y >= GY - 10){
-      pExplode(g.x, g.y, false);
-      const dist = Math.abs(g.x - eX);
-      if(dist < 95 && !eDead) {
-        const dmg = Math.max(10, Math.floor(70 * (1 - dist/95)));
-        damageEnemy(dmg, false);
+  // COOLDOWNS
+  if(gCD>0) { gCD-=sloMo; if(gCD<=0)updateUI(); }
+  if(eCD>0) { eCD-=sloMo; if(eCD<=0)updateUI(); }
+
+  // GRENADES
+  grenades.forEach((g,idx)=>{
+    g.armT -= sloMo; if(g.armT<=0)g.armed=true;
+    g.x += g.vx*sloMo; g.y += g.vy*sloMo;
+    g.vy += 0.28*sloMo; g.rot += g.vrot*sloMo;
+
+    if(g.y >= GY-6){
+      g.y=GY-6; g.vx*=0.6; g.vy=-g.vy*0.4; g.vrot*=0.5;
+    }
+    if(g.x<20||g.x>W-20) g.vx*=-0.7;
+
+    const hitDist=g.armed ? 60 : 32;
+    if(!eDead && Math.hypot(g.x-eX, g.y-(eY-42)) < hitDist){
+      pExplode(g.x,g.y,false);
+      damageEnemy(35,false);
+      shX=g.x;shY=g.y;shPow=10;
+      grenades.splice(idx,1);
+      return;
+    }
+    if(g.y>=GY-8 && Math.abs(g.vx)<0.1 && Math.abs(g.vy)<0.2){
+      pExplode(g.x,g.y,false);
+      if(!eDead && Math.hypot(g.x-eX,g.y-eY)<110){
+        damageEnemy(25,false);
+        shX=g.x;shY=g.y;shPow=7;
       }
       grenades.splice(idx,1);
     }
   });
 
+  // ELECTRIC BOLT TIMEOUT
   if(boltActive){
-    boltTimer--; if(boltTimer<=0) boltActive=false;
+    boltTimer -= sloMo;
+    if(boltTimer<=0)boltActive=false;
   }
 
-  if(!eDead){
-    if(eStun > 0) eStun--;
-    if(eStagger > 0) eStagger--;
+  // SHOCKWAVE SCREEN SHAKE
+  if(shPow>0) shPow *= 0.88;
 
-    if(eStun <= 0){
-      if(ePanic){
-        eX += ePanicVX; ePanicT--;
-        eAnim += Math.abs(ePanicVX)*0.15;
-        if(eX<50||eX>W-50) ePanicVX*=-1;
-        if(ePanicT<=0) ePanic=false;
-      } else {
-        const targetDir = dX > eX ? 1 : -1;
-        eDir = targetDir;
-        eX += eDir * eBaseSpd;
-        eAnim += eBaseSpd * 0.12;
-      }
-    }
-  } else {
-    if(eDeadTimer > 0) eDeadTimer--;
-    if(ragdoll){
-      ragdoll.parts.forEach(p=>{
-        p.vy += 0.32;
-        p.ox += p.vx; p.oy += p.vy;
-        p.rot += p.vrot;
-        if(ragdoll.y + p.oy >= GY) {
-          p.oy = GY - ragdoll.y; p.vy = -p.vy * 0.35; p.vx *= 0.6;
-        }
-      });
-    }
-  }
+  // SLOMO TIMEOUT
+  if(sloT>0){ sloT-=1; if(sloT<=0)sloMo=1; }
 
+  // ENV EFFECTS
+  bgClouds.forEach(c=>{ c.x+=c.spd*sloMo; if(c.x-c.w>W)c.x=-c.w; });
+  bgBirds.forEach(b=>{ b.x-=b.spd*sloMo; b.ft+=sloMo; if(b.x<-30){b.x=W+30;b.y=35+Math.random()*85;} });
+
+  // PARTICLES
   particles.forEach((p,idx)=>{
-    p.vy += p.grav; p.x += p.vx; p.y += p.vy; p.life--;
-    if(p.life<=0) particles.splice(idx,1);
+    p.x+=p.vx*sloMo; p.y+=p.vy*sloMo; p.vy+=p.grav*sloMo;
+    p.life-=sloMo; if(p.life<=0)particles.splice(idx,1);
   });
-
   floats.forEach((f,idx)=>{
-    f.y += f.vy; f.life--;
-    if(f.life<=0) floats.splice(idx,1);
+    f.y+=f.vy*sloMo; f.life-=sloMo; if(f.life<=0)floats.splice(idx,1);
   });
-
   shockwaves.forEach((s,idx)=>{
-    s.r += (s.mr - s.r) * 0.15; s.life--;
-    if(s.life<=0) shockwaves.splice(idx,1);
+    s.r += (s.mr-s.r)*0.18*sloMo;
+    s.life-=sloMo; if(s.life<=0)shockwaves.splice(idx,1);
   });
-
-  if(sloT > 0){
-    sloT--; if(sloT<=0) sloMo=1;
-  }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  MAIN LOOP DRAW
+// ═══════════════════════════════════════════════════════════
 function draw(){
   cx.clearRect(0,0,W,H);
-  drawBG();
+  cx.save();
+  if(shPow>1.2){
+    const sx=(Math.random()-.5)*shPow, sy=(Math.random()-.5)*shPow;
+    cx.translate(sx,sy);
+  }
 
-  shockwaves.forEach(s=>{
-    cx.save();cx.strokeStyle='rgba(255,255,255,'+(s.life/s.ml)*0.6+')';
-    cx.lineWidth=4;cx.beginPath();cx.arc(s.x,s.y,s.r,0,Math.PI*2);cx.stroke();cx.restore();
-  });
+  drawBG();
 
   grenades.forEach(g=>{
     cx.save();cx.translate(g.x,g.y);cx.rotate(g.rot);
-    cx.fillStyle='#4a5830';cx.beginPath();cx.ellipse(0,0,7,10,0,0,Math.PI*2);cx.fill();
-    cx.fillStyle='#222';cx.fillRect(-2,-13,4,4);
+    cx.fillStyle='#2c3d22';cx.beginPath();cx.arc(0,0,7,0,Math.PI*2);cx.fill();
+    cx.strokeStyle='#486038';cx.lineWidth=1.5;cx.stroke();
+    cx.fillStyle='#8c2010';cx.fillRect(-2,-10,4,4);
+    cx.fillStyle='#666';cx.fillRect(-1,-6,2,3);
     cx.restore();
   });
 
   if(!eDead) drawSoldier(eX,eY,eDir,eAnim,eStagger,eStun,enemyHP,enemyMaxHP);
   else drawRagdoll();
 
-  if(boltActive && boltPts.length>0){
-    cx.save();cx.strokeStyle='#d0f8ff';cx.lineWidth=4;
-    cx.shadowBlur=15;cx.shadowColor='#88ddff';cx.beginPath();
-    cx.moveTo(boltPts[0].x, boltPts[0].y);
-    for(let i=1;i<boltPts.length;i++) cx.lineTo(boltPts[i].x, boltPts[i].y);
-    cx.stroke();cx.restore();
-  }
-
   drawDrone();
 
+  if(boltActive && boltPts.length>1){
+    cx.save();
+    for(let r=0;r<3;r++){
+      cx.strokeStyle=r===0?'rgba(120,255,230,0.22)':r===1?'rgba(200,255,255,0.6)':'#fff';
+      cx.lineWidth=r===0?15:r===1?6:2;
+      cx.beginPath();cx.moveTo(boltPts[0].x,boltPts[0].y);
+      for(let i=1;i<boltPts.length;i++) cx.lineTo(boltPts[i].x,boltPts[i].y);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+
   particles.forEach(p=>{
-    cx.save();cx.fillStyle=p.col;cx.globalAlpha=p.life/p.ml;
-    cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.fill();cx.restore();
+    cx.fillStyle=p.col; cx.globalAlpha=Math.max(0,p.life/p.ml);
+    cx.beginPath();cx.arc(p.x,p.y,p.sz,0,Math.PI*2);cx.fill();
+  });
+  cx.globalAlpha=1;
+
+  shockwaves.forEach(s=>{
+    cx.strokeStyle=`rgba(255,235,190,${Math.max(0,s.life/s.ml)*0.35})`;
+    cx.lineWidth=4; cx.beginPath();cx.arc(s.x,s.y,s.r,0,Math.PI*2);cx.stroke();
   });
 
   floats.forEach(f=>{
-    cx.save();cx.fillStyle=f.col;cx.font='bold '+f.sz+'px Orbitron, monospace';
-    cx.textAlign='center';cx.globalAlpha=f.life/f.ml;
-    cx.fillText(f.txt,f.x,f.y);cx.restore();
+    cx.fillStyle=f.col; cx.font=`900 ${f.sz}px Orbitron,Courier New`;
+    cx.textAlign='center'; cx.globalAlpha=Math.max(0,f.life/f.ml);
+    cx.fillText(f.txt,f.x,f.y);
   });
+  cx.globalAlpha=1;
+
+  cx.restore();
 }
 
-let lastT=0;
-function loop(t){
-  let dt = t - lastT; if(dt>100) dt=16; lastT=t;
-  let steps = sloMo === 1 ? 1 : (Math.random() < sloMo ? 1 : 0);
-  
-  if(steps>0) update();
-  
+function loop(){
+  updateEntities();
   draw();
   requestAnimationFrame(loop);
 }
 
 // ═══════════════════════════════════════════════════════════
-//  CONTROLS & LISTENERS
+//  CONTROLS & KEYBOARD
 // ═══════════════════════════════════════════════════════════
 window.addEventListener('keydown',e=>{
   if(e.code==='ArrowLeft'||e.code==='KeyA') goL=true;
   if(e.code==='ArrowRight'||e.code==='KeyD') goR=true;
-  if(e.code==='Space'||e.code==='ArrowDown') throwGrenade();
-  if(e.code==='KeyE'||e.code==='ShiftLeft') useElectric();
+  if(e.code==='Space'||e.code==='KeyW') throwGrenade();
+  if(e.code==='ShiftLeft'||e.code==='KeyE') useElectric();
 });
 window.addEventListener('keyup',e=>{
   if(e.code==='ArrowLeft'||e.code==='KeyA') goL=false;
@@ -1099,23 +1180,18 @@ window.addEventListener('keyup',e=>{
 });
 
 const bL=document.getElementById('btnL'), bR=document.getElementById('btnR');
-const bG=document.getElementById('btnG'), bE=document.getElementById('btnE');
+['touchstart','mousedown'].forEach(ev=>{
+  bL.addEventListener(ev,e=>{e.preventDefault();goL=true;});
+  bR.addEventListener(ev,e=>{e.preventDefault();goR=true;});
+  document.getElementById('btnG').addEventListener(ev,e=>{e.preventDefault();throwGrenade();});
+  document.getElementById('btnE').addEventListener(ev,e=>{e.preventDefault();useElectric();});
+});
+['touchend','touchcancel','mouseup','mouseleave'].forEach(ev=>{
+  bL.addEventListener(ev,e=>{e.preventDefault();goL=false;});
+  bR.addEventListener(ev,e=>{e.preventDefault();goR=false;});
+});
 
-bL.addEventListener('touchstart',e=>{e.preventDefault();goL=true;});
-bL.addEventListener('touchend',e=>{e.preventDefault();goL=false;});
-bR.addEventListener('touchstart',e=>{e.preventDefault();goR=true;});
-bR.addEventListener('touchend',e=>{e.preventDefault();goR=false;});
-bG.addEventListener('touchstart',e=>{e.preventDefault();throwGrenade();});
-bE.addEventListener('touchstart',e=>{e.preventDefault();useElectric();});
-
-bL.addEventListener('mousedown',()=>{goL=true;});
-bL.addEventListener('mouseup',()=>{goL=false;}); bL.addEventListener('mouseleave',()=>{goL=false;});
-bR.addEventListener('mousedown',()=>{goR=true;});
-bR.addEventListener('mouseup',()=>{goR=false;}); bR.addEventListener('mouseleave',()=>{goR=false;});
-bG.addEventListener('click',throwGrenade);
-bE.addEventListener('click',useElectric);
-
-setInterval(updateUI, 100);
+// INIT
 updateUI();
 requestAnimationFrame(loop);
 
@@ -1123,3 +1199,4 @@ requestAnimationFrame(loop);
 </script>
 </body>
 </html>
+
